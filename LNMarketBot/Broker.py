@@ -121,6 +121,14 @@ class Broker:
         return Positions.closePosition(self.token, pid)
 
     @addMessage
+    def closeAllLongs(self):
+        return Positions.closeAllLongs(self.token)
+
+    @addMessage
+    def closeAllShorts(self):
+        return Positions.closeAllShorts(self.token)
+
+    @addMessage
     def cancelPosition(self, pid):
         return Positions.cancelPosition(self.token, pid)
 
