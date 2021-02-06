@@ -1,5 +1,5 @@
 import talib
-from LNMarketBot import Strategy
+from LNMarketBot import Strategy, Broker, Bot
 
 
 class LowestPriceStrat(Strategy):
@@ -49,9 +49,9 @@ class LowestPriceStrat(Strategy):
               f" BBand Bot: {lower[-1]:.2f}, EMA: {ema[-1]:.2f}")
 
         if (self.openCount < 50 and (not closeOverEma) and belowBBand and
-            ((close[-2]-self.stopLoss) > self.params["TradeDistance"]*close[-2]
-           or low[-2] < self.stopLoss)):
-            self.stopLoss = (1-self.params["StopMargin"])*low[-2]
+            ((close[-1]-self.stopLoss) > self.params["TradeDistance"]*close[-1]
+           or low[-1] < self.stopLoss)):
+            self.stopLoss = (1-self.params["StopMargin"])*low[-1]
             print(f'Stop Loss set: {self.stopLoss}')
 
             leverage = min(
@@ -75,3 +75,24 @@ class LowestPriceStrat(Strategy):
                 f" with liquidation {buyInfo['liquidation']}.\n"
                 f"Balance: {self.broker.balance}"
             self.broker.notifier.notify(msgTxt)
+
+LNMToken = '<LNMarkets API token with position scope>'
+broker = Broker(LNMToken, <initial cash>)
+telegramToken = '<Telegram Token>'
+chatId = <chat id>
+broker.notifier.enableTelegram(chatID=chatId, token=telegramToken)
+
+strategy = LowestPriceStrat(
+    broker=broker,
+    BollingerPeriod=20, Deviation=2.0,
+    AveragePeriod=240,
+    StopMargin=0.02,
+    BuyLimit=1.05,
+    TradeDistance=0.1,
+    RiskPercent=0.02,
+    TrailPercent=0.1,
+    CashLimit=1.0e06,
+)
+bot = Bot()
+bot.addStrategy(strategy)
+bot.run()
