@@ -1,55 +1,48 @@
-import time
 import sys
-import krakenex
-from pykrakenapi import KrakenAPI
+import asyncio
+
+
+def background(f):
+    def wrapped(*args, **kwargs):
+        return asyncio.get_event_loop().run_in_executor(None, f,
+                                                        *args, **kwargs)
+
+    return wrapped
 
 
 class Bot:
 
-    def __init__(self, useKraken=True, interval=1):
-        self.useKraken = useKraken
-        self.KAPI = KrakenAPI(krakenex.API())
-        self.ohlc, self.since = self.KAPI.get_ohlc_data(
-            "BTCUSD",
-            interval=interval,
-            since=None,
-            ascending=True,
-        )
+    def __init__(self):
         self.strategy = []
 
-    def run(self, interval=1):
-        wait = 60
-        maxRows = 2880
-        blockSize = 1440
-        retry = 0
-        while retry < 10:
+    def run(self):
+        for strat in self.strategy:
+            self.runStrategy(strat)
+
+    # @background
+    def runStrategy(self, strategy):
+        assert(strategy.datas)
+        priceGens = []
+        for data in strategy.datas:
+            priceGens.append(data.dataGenerator())
+        while True:
+            prices = []
             try:
-                ohlcnew, self.since = self.KAPI.get_ohlc_data(
-                    "BTCUSD",
-                    interval=interval,
-                    since=self.since,
-                    ascending=True,
-                )
-            except [TimeoutError, ConnectionError]:
-                time.sleep(wait)
-                retry += 1
-                continue
-
-            # Remove the last enty as it is unconfirmed
-            self.ohlc.drop(self.ohlc.tail(1).index, inplace=True)
-            self.ohlc = self.ohlc.append(ohlcnew)
-            if len(self.ohlc) >= maxRows:
-                self.ohlc.drop(self.ohlc.head(blockSize).index,
-                               inplace=True)
-                
-            if self.strategy:
-                for strat in self.strategy:
-                    strat.execute(self.ohlc)
-            else:
-                raise ValueError("Add Strategy to run Bot")
-
+                for gen in priceGens:
+                    prices.append(next(gen))
+            except StopIteration:
+                break
+            try:
+                strategy.broker.processData(prices)
+                strategy.execute(prices)
+            except ValueError as VErr:
+                strategy.broker.notifier.notify(str(VErr))
+                break
+            except Exception as exception:
+                strategy.broker.notifier.notify(str(exception))
+                raise exception
             sys.stdout.flush()
-            time.sleep(interval*wait)
+        strategy.stop()
 
     def addStrategy(self, strategy):
         if strategy.broker is None:

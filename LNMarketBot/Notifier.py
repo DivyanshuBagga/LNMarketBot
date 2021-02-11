@@ -9,7 +9,11 @@ class Notifier:
     def __init__(self, silent=False):
         self.telegram = None
         self.pushover = None
+        self.stdout = False
         self.silent = silent
+
+    def enableStdout(self):
+        self.stdout = True
 
     def enableTelegram(self, chatID, token):
         self.telegram = namedtuple('Telegram', 'notifier chatID token')(
@@ -27,7 +31,7 @@ class Notifier:
         handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
         log = logging.getLogger()
         log.addHandler(handler)
-        log.error('Telegram enabled for logging')
+        self.notify('Telegram enabled for logging')
 
     def enablePushover(self, userkey, APIkey):
         self.pushover = namedtuple('Pushover', 'notifier APIkey userkey')(
@@ -45,9 +49,11 @@ class Notifier:
         handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
         log = logging.getLogger()
         log.addHandler(handler)
-        log.error('Pushover enabled for logging')
+        self.notify('Pushover enabled for logging')
 
     def notify(self, message):
+        if self.stdout:
+            print(message)
         if self.telegram is not None:
             self.telegram.notifier.notify(
                 token=self.telegram.token,
