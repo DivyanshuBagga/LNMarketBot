@@ -33,6 +33,13 @@ class BacktestBroker(Broker):
             'price',
             'symbol',
         ], index=pd.to_datetime([]))
+        self.book = pd.DataFrame(columns=[
+            'balance',
+            'cashBalance',
+            'borrowed',
+            'position',
+            'returns',
+        ], index=pd.to_datetime([]))
         self.orders = deque()
         self.stopOrders = deque()
         super().__init__()
@@ -135,10 +142,10 @@ class BacktestBroker(Broker):
         assert(order.Leverage > 0)
 
         if self.position >= 0:
-            cost = order.Quantity*price/order.Leverage
+            cost = (1+self.commission)*order.Quantity*price/order.Leverage
         else:
             netQuantity = order.Quantity + self.position
-            freeCapital = order.Quantity * price
+            freeCapital = (1-self.commission)*order.Quantity * price
             if netQuantity <= 0:
                 cost = 0
                 self.calculateDebt(freeCapital)
@@ -178,10 +185,10 @@ class BacktestBroker(Broker):
         assert(order.Leverage > 0)
 
         if self.position <= 0:
-            cost = order.Quantity*price/order.Leverage
+            cost = (1+self.commission)*order.Quantity*price/order.Leverage
         else:
             netQuantity = self.position - order.Quantity
-            freeCapital = order.Quantity * price
+            freeCapital = (1-self.commission)*order.Quantity * price
             if netQuantity >= 0:
                 cost = 0
                 self.calculateDebt(freeCapital)
@@ -227,6 +234,26 @@ class BacktestBroker(Broker):
                 f"cash: {self.cashBalance:.2f}\n"
                 f"Position: {self.position}, Price: {self.price['close'][0]}"
             )
+        if (last.index[0].second == 0 and
+            last.index[0].minute == 0 and
+            last.index[0].hour == 0):
+            self._cashBalance -= self.interest*self.borrowed
+            try:
+                self.book.loc[last.index[0]] = [
+                    self.balance,
+                    self.cashBalance,
+                    self.borrowed,
+                    self.position,
+                    (self.balance - self.book.tail(1)['balance'][0])/self.balance,
+                ]
+            except IndexError:
+                self.book.loc[last.index[0]] = [
+                    self.balance,
+                    self.cashBalance,
+                    self.borrowed,
+                    self.position,
+                    0.0,
+                ]
 
         leftStopOrders = deque()
         while self.stopOrders:

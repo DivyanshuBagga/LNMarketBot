@@ -3,11 +3,8 @@ from abc import ABCMeta, abstractmethod
 
 class Data(metaclass=ABCMeta):
 
-    def __init__(self, interval=1, liveTrading=True, start=None, end=None):
-        self.interval = interval
-        self.liveTrading = liveTrading
-        self.start = start
-        self.end = end
+    def __init__(self):
+        pass
 
     @abstractmethod
     def dataGenerator(self):

@@ -1,5 +1,6 @@
 import time
 import talib
+import datetime
 from LNMarketBot import Strategy, BacktestBroker, CSVData, Bot
 
 
@@ -83,8 +84,13 @@ class BacktestStrat(Strategy):
 broker = BacktestBroker(1.0e05)
 broker.notifier.enableStdout()
 
-filename = './BTCPriceData2016Dec.csv'
-csvdata = CSVData(filename, 600, datetime='Unnamed: 0',volume='Volume_(BTC)',open_='Open',high='High',low='Low',close='Close')
+dirname = '<Directory Path>'
+filename = 'BTCPriceData2016.csv'
+csvdata = CSVData(
+    dirname+filename,
+    window=datetime.timedelta(600),
+    datetime='Unnamed: 0',
+)
 
 strategy = BacktestStrat(
     broker=broker,

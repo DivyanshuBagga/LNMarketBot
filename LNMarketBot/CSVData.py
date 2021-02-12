@@ -17,6 +17,7 @@ class CSVData(Data):
             close='close',
             start=None,
             end=None,
+            interval=60,
             **params,
     ):
         fileData = pandas.read_csv(filename)
@@ -34,7 +35,8 @@ class CSVData(Data):
             close: 'close',
             volume: 'volume',
         })
-        self.window = dt.timedelta(minutes=window)
+        self.window = window
+        self.interval = interval
         if end is None:
             self.start = fileData.index[0] + self.window
             self.end = fileData.index[-1]
@@ -42,10 +44,11 @@ class CSVData(Data):
             self.start = start
             assert(end is not None)
             self.end = end
-            super().__init__(**params)
+        super().__init__(**params)
 
     def dataGenerator(self):
-        for seconds in range(0, round((self.end-self.start).total_seconds()), 60):
+        for seconds in range(0, round((self.end-self.start).total_seconds()),
+                             self.interval):
             end = self.start+dt.timedelta(seconds=seconds)
             start = end-self.window
             yield self.ohlc[start:end]
