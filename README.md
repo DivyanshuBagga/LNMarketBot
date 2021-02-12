@@ -4,12 +4,11 @@ A trading bot for [LNMarkets](https://lnmarkets.com/), using the [LNMarkets API]
 
 To install: `pip install LNMarketBot`
 
-An abstract class `LNMarketBot.Strategy` is provided, which must be extended with implementation of `LNMarketBot.Strategy.init()` and `LNMarketBot.Strategy.execute()` methods. The init() method 
-will be called only once, before the bot starts processing price information, while execute() is called repetedly, for every new price bar that bot recieves. Any parameters required by the strategy, can be passed during instantiation, and will be accessible using `LNMarketBot.Strategy.params` dictionary. An example strategy is provided in LNMarketBot/Examples/LowestPriceStrat.py on github.
+An abstract class `LNMarketBot.Strategy` is provided, which must be extended with implementation of `LNMarketBot.Strategy.init()`, `LNMarketBot.Strategy.execute()`, and `LNMarketBot.Strategy.stop()` methods. The `init()` method will be called only once, before the bot starts processing price information, while `execute()` is called repetedly, for every new price bar that bot recieves. Any parameters required by the strategy, can be passed during instantiation, and will be accessible using `LNMarketBot.Strategy.params` dictionary. Example strategies are provided in LNMarketBot/Examples/ on github.
 
-The price information is obtained from Kraken, using [Pykrakenapi](https://github.com/dominiktraxl/pykrakenapi), as the methods for same are currently not working for LNMarkets API. This may result in price discrepancy between strategy and broker execution. The price bars are of 1 minute duration, and at present, only supplied for last 12 hours.
+The price information is obtained from Kraken, using [Pykrakenapi](https://github.com/dominiktraxl/pykrakenapi), as the methods for same are currently not working for LNMarkets API. This may result in price discrepancy between strategy and broker execution. The price bars are of 1 minute duration, and at present, only supplied for last 12 hours. You can also provide csv files containing price information for backtesting (see examples). A strategy can consume data from multiple data feeds, and bot can process multiple strategies simultaneously.
 
- Bot interacts with LNMarkets through `LNMarketBot.Broker` class, which provides methods for buying/selling, as well as properties for viewing opne/closed positions, balance, etc. 
+ Bot interacts with LNMarkets through `LNMarketBot.LNMBroker` class, which provides methods for buying/selling, as well as properties for viewing opne/closed positions, balance, etc. If backtesting, the strategy connects to `LNMarketBot.BacktestBroker` class instead.
  
  You can enable Telegram or Pushover notifications through `LNMarketBot.Notifier`, which provides methods enableTelegram(chatID, token) and enablePushover(userkey, APIkey) for the same. A notifier instance is added to broker on instantiation and access via `broker.notifier` and all position updates through broker will automatically be notified. If you want to disable the automatic notification, instantiate broker with `silent=False`.
 
