@@ -14,10 +14,10 @@ The price information is obtained from Kraken, using [Pykrakenapi](https://githu
 
 Example Usage:
 ```python
-import LNMarketBot
+from LNMarketBot import Strategy, LNMBroker, KrakenData, Bot
 
 LNMToken = '<YOUR TOKEN>'
-broker = LNMarketBot.Broker(LNMToken, <Starting Balance>)
+broker = LNMBroker(LNMToken, <Starting Balance>)
 telegramToken = '<Telegram Bot Token>'
 chatId = <Your Chat Id with Telegram Bot>
 broker.notifier.enableTelegram(chatID = chatId, token = telegramToken)
@@ -34,8 +34,9 @@ strategy = LowestPriceStrat(
     TrailPercent=0.1,
     CashLimit=1.0e06,
 )
+strategy.addData(KrakenData())
 
-bot = LNMarketBot.Bot()
+bot = Bot()
 bot.addStrategy(strategy)
 bot.run()
 ```

@@ -10,12 +10,12 @@ class LowestPriceStrat(Strategy):
         self.drawdown = 0.0
         self.openCount = len(self.broker.openPositions)
 
-    def execute(self, ohlc):
-        dtime = ohlc.index
-        close = ohlc["close"]
-        low = ohlc["low"]
-        high = ohlc["high"]
-        open_ = ohlc["open"]
+    def execute(self, datas):
+        dtime = datas[0].index
+        close = datas[0]["close"]
+        low = datas[0]["low"]
+        high = datas[0]["high"]
+        open_ = datas[0]["open"]
 
         upper, middle, lower = talib.BBANDS(
             close,
@@ -82,6 +82,9 @@ class LowestPriceStrat(Strategy):
                     f"Balance: {self.broker.balance}"
                 )
             self.broker.notifier.notify(msgTxt)
+
+    def stop(self):
+        self.broker.notifier.notify(f"Final Balance: {self.broker.balance:.2f}")
 
 LNMToken = '<LNMarkets API token with position scope>'
 broker = LNMBroker(LNMToken, <initial cash>)

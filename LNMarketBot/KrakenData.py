@@ -16,36 +16,38 @@ class KrakenData(Data):
             ascending=True,
         )
         self.firstCall = True
-        super().__init__(interval=interval, **params)
+        self.interval = interval
+        super().__init__(**params)
 
-        def dataGenerator(self):
-            assert(self.liveTrading)
-            wait = 60
-            maxRows = 2880
-            blockSize = 1440
+    def dataGenerator(self):
+        wait = 60
+        maxRows = 2880
+        blockSize = 1440
+            
+        for retry in range(10):
             if not self.firstCall:
                 # await asyncio.sleep(interval*wait)
-                time.sleep(interval*wait)
+                time.sleep(self.interval*wait)
             else:
                 self.firstCall = False
 
-            for retry in range(10):
-                try:
-                    ohlcnew, self.since = self.KAPI.get_ohlc_data(
-                        "BTCUSD",
-                        interval=interval,
-                        since=self.since,
-                        ascending=True,
-                    )
-                except (TimeoutError, ConnectionError):
-                    # await asyncio.sleep(wait)
-                    time.sleep(wait)
-                    retry += 1
-                    continue
-                # Remove the last enty as it is unconfirmed
-                self.ohlc.drop(self.ohlc.tail(1).index, inplace=True)
-                self.ohlc = self.ohlc.append(ohlcnew)
-                if len(self.ohlc) >= maxRows:
-                    self.ohlc.drop(self.ohlc.head(blockSize).index,
-                                   inplace=True)
-                    yield self.ohlc
+            try:
+                ohlcnew, self.since = self.KAPI.get_ohlc_data(
+                    "BTCUSD",
+                    interval=self.interval,
+                    since=self.since,
+                    ascending=True,
+                )
+            except (TimeoutError, ConnectionError):
+                # await asyncio.sleep(wait)
+                time.sleep(wait)
+                retry += 1
+                continue
+            # Remove the last enty as it is unconfirmed
+            retry = 0
+            self.ohlc.drop(self.ohlc.tail(1).index, inplace=True)
+            self.ohlc = self.ohlc.append(ohlcnew)
+            if len(self.ohlc) >= maxRows:
+                self.ohlc.drop(self.ohlc.head(blockSize).index,
+                               inplace=True)
+            yield self.ohlc
