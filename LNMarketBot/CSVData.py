@@ -18,6 +18,7 @@ class CSVData(Data):
             start=None,
             end=None,
             interval=60,
+            freq=None,
             **params,
     ):
         fileData = pandas.read_csv(filename)
@@ -28,13 +29,38 @@ class CSVData(Data):
         datetime_index = pandas.DatetimeIndex(datetime_series.values)
         fileData = fileData.set_index(datetime_index)
         fileData.drop(datetime, axis=1, inplace=True)
-        self.ohlc = fileData.rename(columns={
-            open_: 'open',
-            high: 'high',
-            low: 'low',
-            close: 'close',
-            volume: 'volume',
-        })
+        if freq is not None:
+            closeData = fileData[close].resample(freq).last()
+            openData = fileData[open_].resample(freq).first()
+            lowData = fileData[low].resample(freq).min()
+            highData = fileData[high].resample(freq).max()
+            volumeData = fileData[volume].resample(freq).sum()
+            self.ohlc = pandas.concat([
+                closeData,
+                openData,
+                lowData,
+                highData,
+                volumeData,
+            ], axis=1).rename(columns={
+                open_: 'open',
+                high: 'high',
+                low: 'low',
+                close: 'close',
+                volume: 'volume',
+            })
+        else:
+            self.checkKey(fileData, open_)
+            self.checkKey(fileData, high)
+            self.checkKey(fileData, low)
+            self.checkKey(fileData, close)
+            self.checkKey(fileData, volume)
+            self.ohlc = fileData.rename(columns={
+                open_: 'open',
+                high: 'high',
+                low: 'low',
+                close: 'close',
+                volume: 'volume',
+            })
         self.window = window
         self.interval = interval
         if end is None:
@@ -52,3 +78,8 @@ class CSVData(Data):
             end = self.start+dt.timedelta(seconds=seconds)
             start = end-self.window
             yield self.ohlc[start:end]
+
+    @staticmethod
+    def checkKey(df, key):
+        if key not in df.columns:
+            raise IndexError(f"{key} column is not present in data frame")

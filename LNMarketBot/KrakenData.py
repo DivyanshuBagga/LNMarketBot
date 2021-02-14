@@ -1,4 +1,5 @@
 import asyncio
+import time
 from .Data import Data
 import krakenex
 from pykrakenapi import KrakenAPI
@@ -23,7 +24,8 @@ class KrakenData(Data):
             maxRows = 2880
             blockSize = 1440
             if not self.firstCall:
-                await asyncio.sleep(interval*wait)
+                # await asyncio.sleep(interval*wait)
+                time.sleep(interval*wait)
             else:
                 self.firstCall = False
 
@@ -35,8 +37,9 @@ class KrakenData(Data):
                         since=self.since,
                         ascending=True,
                     )
-                except [TimeoutError, ConnectionError]:
-                    await asyncio.sleep(wait)
+                except (TimeoutError, ConnectionError):
+                    # await asyncio.sleep(wait)
+                    time.sleep(wait)
                     retry += 1
                     continue
                 # Remove the last enty as it is unconfirmed
