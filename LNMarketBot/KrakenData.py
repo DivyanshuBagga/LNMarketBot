@@ -23,8 +23,8 @@ class KrakenData(Data):
         wait = 60
         maxRows = 2880
         blockSize = 1440
-            
-        for retry in range(10):
+        retry = 0
+        while retry < 10:
             if not self.firstCall:
                 # await asyncio.sleep(interval*wait)
                 time.sleep(self.interval*wait)
@@ -51,3 +51,4 @@ class KrakenData(Data):
                 self.ohlc.drop(self.ohlc.head(blockSize).index,
                                inplace=True)
             yield self.ohlc
+        raise ConnectionError("Retry Exceeded 10")

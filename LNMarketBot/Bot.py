@@ -14,16 +14,12 @@ class Bot:
 
     def __init__(self):
         self.strategy = []
+        self.datas = []
+        self.dataIndex = 0
 
     def run(self):
-        for strat in self.strategy:
-            self.runStrategy(strat)
-
-    # @background
-    def runStrategy(self, strategy):
-        assert(strategy.datas)
         priceGens = []
-        for data in strategy.datas:
+        for data in self.datas:
             priceGens.append(data.dataGenerator())
         while True:
             prices = []
@@ -32,19 +28,31 @@ class Bot:
                     prices.append(next(gen))
             except StopIteration:
                 break
-            try:
-                strategy.broker.processData(prices)
-                strategy.execute(prices)
-            except ValueError as VErr:
-                strategy.broker.notifier.notify(str(VErr))
-                break
-            except Exception as exception:
-                strategy.broker.notifier.notify(str(exception))
-                raise exception
+            for strategy in self.strategy:
+                stratPrices = []
+                for index in strategy.dataIndex:
+                    stratPrices.append(prices[index])
+                try:
+                    strategy.broker.processData(stratPrices)
+                    strategy.execute(stratPrices)
+                except ValueError as VErr:
+                    strategy.broker.notifier.notify(str(VErr))
+                    break
+                except Exception as exception:
+                    strategy.broker.notifier.notify(str(exception))
+                    raise exception
             sys.stdout.flush()
-        strategy.stop()
+        for strategy in self.strategy:
+            strategy.stop()
 
     def addStrategy(self, strategy):
         if strategy.broker is None:
             raise ValueError("Add Broker to Strategy first")
         self.strategy.append(strategy)
+        for data in strategy.datas:
+            try:
+                strategy.dataIndex.append(self.datas.index(data))
+            except ValueError:
+                self.datas.append(data)
+                strategy.dataIndex.append(self.dataIndex)
+                self.dataIndex += 1

@@ -7,6 +7,7 @@ class Strategy(metaclass=ABCMeta):
         self.params = params
         self.broker = broker
         self.datas = []
+        self.dataIndex = []
         self.init()
 
     @abstractmethod
