@@ -14,6 +14,8 @@ class MultipleFeedStrat(Strategy):
 
     def execute(self, datas):
         dtime = datas[0].index
+        dtime1 = datas[1].index
+        dtime2 = datas[2].index        
         close = datas[0]["close"]
         low = datas[0]["low"]
         high = datas[0]["high"]
@@ -53,7 +55,9 @@ class MultipleFeedStrat(Strategy):
             ((close[-1]-self.stopLoss) > self.params["TradeDistance"]*close[-1]
              or low[-1] < self.stopLoss)):
             self.stopLoss = (1-self.params["StopMargin"])*low[-1]
-            print(f'Stop Loss set: {self.stopLoss:.2f}')
+            print(
+                f'Stop Loss set: {self.stopLoss:.2f}'
+            )
 
             leverage = self.params['Leverage']
             quantity = riskAmount // (close[-1] - self.stopLoss)
@@ -91,7 +95,7 @@ if __name__ == '__main__':
 
     startDate = datetime.datetime(2016, 12, 1, 1, 0, 0)
     endDate = datetime.datetime(2016, 12, 31, 23, 59, 0)
-    dirname = '<Direcory Path>'
+    dirname = '~/Documents/Bitcoin/Trading/'
     # window 50 is sufficient to compute 20 minute bollinger bands.
     filename1 = 'BTCPriceData2016.csv'
     csvdata1 = CSVData(

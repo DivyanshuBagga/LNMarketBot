@@ -37,11 +37,21 @@ class BacktestBroker(Broker):
             'balance',
             'cashBalance',
             'borrowed',
-            'position',
+            symbol,
             'returns',
         ], index=pd.to_datetime([]))
+        self.orderBook = pd.DataFrame(columns=[
+            'Type',
+            'Limit',
+            'Quantity',
+            'Leverage',
+            'Stoploss',
+            'Takeprofit',
+            'Parent',
+            'StopExecuted',
+            'ProfitExecuted',
+        ], index=pd.Series([]))
         self.orders = deque()
-        self.stopOrders = deque()
         super().__init__()
 
     @property
@@ -101,12 +111,6 @@ class BacktestBroker(Broker):
                 Limit=None,
                 Parent=None,
             ))
-        leftStopOrders = deque()
-        while self.stopOrders:
-            order = self.stopOrders.popleft()
-            if order.Type == 'sell':
-                leftStopOrders.append(order)
-        self.stopOrders = leftStopOrders
 
     def closeAllShorts(self):
         if self.position < 0:
@@ -119,12 +123,6 @@ class BacktestBroker(Broker):
                 Limit=None,
                 Parent=None,
             ))
-        leftStopOrders = deque()
-        while self.stopOrders:
-            order = self.stopOrders.popleft()
-            if order.Type == 'buy':
-                leftStopOrders.append(order)
-        self.stopOrders = leftStopOrders
 
     def calculateDebt(self, freeCapital):
         if self.borrowed >= freeCapital:
@@ -137,92 +135,105 @@ class BacktestBroker(Broker):
             )
             self._borrowed = 0
 
-
     def processBuy(self, order, price):
         assert(order.Leverage > 0)
+        assert(order.Type == 'buy')
 
-        if self.position >= 0:
-            cost = (1+self.commission)*order.Quantity*price/order.Leverage
+        if order.Parent is not None:
+            self.notifier.notify(f"Takeprofit buy {order.Quantity}"
+                                 f" Total: {self.position}"
+                                 f" Parent: {order.Parent}"
+                                 f" price: {price}"
+                                 )
+            # If a buy takeprofit order is triggered,
+            # Position must be negative.
+            assert(self.position < 0)
+            assert(abs(self.position) >= order.Quantity)
+
+        cost = (1+self.commission)*order.Quantity*price/order.Leverage
+
+        if cost > self.cashBalance:
+            raise ValueError(f"Balance {self.cashBalance:.2f} not enough"
+                             f" to cover cost {cost:.2f}")
+
+        self._cashBalance = self.cashBalance - cost
+        self._borrowed += cost*order.Leverage - cost
+
+        # Add transaction
+        if self.price.index[0] in self.transactions.index:
+            self.transactions.loc[self.price.index[0]] = [
+                (self.transactions.loc[self.price.index[0]].amount
+                 + order.Quantity),
+                price,
+                self.symbol,
+            ]
         else:
-            netQuantity = order.Quantity + self.position
-            freeCapital = (1-self.commission)*order.Quantity * price
-            if netQuantity <= 0:
-                cost = 0
-                self.calculateDebt(freeCapital)
-            else:
-                cost = netQuantity*price/order.Leverage
-                if cost < freeCapital + self.cashBalance - self.borrowed:
-                    self.calculateDebt(freeCapital)
-
-        if cost < self.cashBalance:
-            self._cashBalance = self.cashBalance - cost
-            self._borrowed += cost*order.Leverage - cost
-            if order.Stoploss is not None:
-                self.stopOrders.append(order)
-            if order.Takeprofit is not None:
-                self.orders.append(Order(
-                    Type='sell',
-                    Quantity=order.Quantity,
-                    Leverage=1,
-                    Stoploss=None,
-                    Takeprofit=None,
-                    Limit=order.Takeprofit,
-                    Parent=order,
-                    ))
-
-            # Add transaction
             self.transactions.loc[self.price.index[0]] = [
                 order.Quantity,
                 price,
                 self.symbol,
-                ]
-            self.transactions = self.transactions.sort_index()
-        else:
-            raise ValueError(f"Balance {self.cashBalance:.2f} not enough"
-                             f" to cover cost {cost:.2f}")
+            ]
+        self.transactions = self.transactions.sort_index()
+        self.orderBook = self.orderBook.append({
+            'Type': order.Type,
+            'Limit': order.Limit,
+            'Quantity': order.Quantity,
+            'Leverage': order.Leverage,
+            'Stoploss': order.Stoploss,
+            'Takeprofit': order.Takeprofit,
+            'Parent': order.Parent,
+            'StopExecuted': False,
+            'ProfitExecuted': False,
+        }, ignore_index=True)
 
     def processSell(self, order, price):
         assert(order.Leverage > 0)
+        assert(order.Type == 'sell')
+        if order.Parent is not None:
+            self.notifier.notify(f"Takeprofit sell {order.Quantity}"
+                                 f" Total: {self.position}"
+                                 f" Parent: {order.Parent}"
+                                 f" price: {price}"
+                                 )
+            # If a sell takeprofit order is triggered,
+            # Position must be positive
+            assert(self.position > 0)
+            assert(abs(self.position) >= order.Quantity)
 
-        if self.position <= 0:
-            cost = (1+self.commission)*order.Quantity*price/order.Leverage
+        netQuantity = self.position - order.Quantity
+        value = abs(netQuantity) * price
+        if value > self.cashBalance * order.Leverage:
+            raise ValueError(f"Cash Balance {self.cashBalance:.2f} not enough"
+                             f" to borrow shares at leverage {order.Leverage:.2f}")
+        freeCapital = (1-self.commission) * order.Quantity * price
+        self.calculateDebt(freeCapital)
+
+        # Add transaction
+        if self.price.index[0] in self.transactions.index:
+            self.transactions.loc[self.price.index[0]] = [
+                (self.transactions.loc[self.price.index[0]].amount
+                 - order.Quantity),
+                price,
+                self.symbol,
+            ]
         else:
-            netQuantity = self.position - order.Quantity
-            freeCapital = (1-self.commission)*order.Quantity * price
-            if netQuantity >= 0:
-                cost = 0
-                self.calculateDebt(freeCapital)
-            else:
-                cost = abs(netQuantity)*price/order.leverage
-                if cost < freeCapital + self.cashBalance - self.borrowed:
-                    self.calculateDebt(freeCapital)
-
-        if cost < self.cashBalance:
-            self._balance = self.cashBalance - cost
-            self._borrowed += cost*order.Leverage - cost
-            if order.Stoploss is not None:
-                self.stopOrders.append(order)
-            if order.Takeprofit is not None:
-                self.orders.append(Order(
-                    Type='buy',
-                    Quantity=order.Quantity,
-                    Leverage=1,
-                    Stoploss=None,
-                    Takeprofit=None,
-                    Limit=order.Takeprofit,
-                    Parent=order,
-                    ))
-
-            # Add transaction
             self.transactions.loc[self.price.index[0]] = [
                 - order.Quantity,
                 price,
                 self.symbol,
-                ]
-            self.transactions = self.transactions.sort_index()
-        else:
-            raise ValueError(f"Balance {self.balance:.2f} not enough"
-                             f" to cover cost {cost:.2f}")
+            ]
+        self.transactions = self.transactions.sort_index()
+        self.orderBook = self.orderBook.append({
+            'Type': order.Type,
+            'Limit': order.Limit,
+            'Quantity': order.Quantity,
+            'Leverage': order.Leverage,
+            'Stoploss': order.Stoploss,
+            'Takeprofit': order.Takeprofit,
+            'Parent': order.Parent,
+            'StopExecuted': False,
+            'ProfitExecuted': False,
+        }, ignore_index=True)
 
     def processData(self, priceData):
         last = priceData[0].tail(1)
@@ -255,9 +266,9 @@ class BacktestBroker(Broker):
                     0.0,
                 ]
 
-        leftStopOrders = deque()
-        while self.stopOrders:
-            order = self.stopOrders.popleft()
+        for index, order in self.orderBook.loc[(lambda df: (df['Stoploss'].notnull())
+                                                & (df['StopExecuted'] is False)
+                                                & (df['ProfitExecuted'] is False))].iterrows():
             if order.Type == 'buy' and order.Stoploss > last['low'][0]:
                 self.processSell(Order(
                     Type='sell',
@@ -266,26 +277,21 @@ class BacktestBroker(Broker):
                     Stoploss=None,
                     Takeprofit=None,
                     Limit=None,
-                    Parent=None,
+                    Parent=index,
                     ), order.Stoploss)
-                # No child order in leftOrders by queue semantics
-                self.removeChildOrders(order)
+                self.orderBook.at[index, 'StopExecuted'] = True
             elif (order.Type == 'sell' and
                   order.Stoploss < last['high'][0]):
-                self.processSell(Order(
+                self.processBuy(Order(
                     Type='buy',
                     Quantity=order.Quantity,
-                    Leverage=1,
+                    Leverage=order.Leverage,
                     Stoploss=None,
                     Takeprofit=None,
                     Limit=None,
-                    Parent=None,
+                    Parent=index,
                 ), order.Stoploss)
-                # No child order in leftOrders by queue semantics
-                self.removeChildOrders(order)
-            else:
-                leftStopOrders.append(order)
-        self.stopOrders = leftStopOrders
+                self.orderBook.at[index, 'StopExecuted'] = True
 
         leftOrders = deque()
         while self.orders:
@@ -313,7 +319,32 @@ class BacktestBroker(Broker):
                         leftOrders.append(order)
         self.orders = leftOrders
 
-    def removeChildOrders(self, parentOrder):
-        for order in self.orders:
-            if order.Parent is not None and order.Parent == parentOrder:
-                self.orders.remove(order)
+        for index, order in self.orderBook.loc[(lambda df: (df['Takeprofit'].notnull())
+                                                & (df['StopExecuted'] is False)
+                                                & (df['ProfitExecuted'] is False))].iterrows():
+            if order.Type == 'buy':
+                if order.Takeprofit < last['high'][0]:
+                    self.processSell(Order(
+                        Type='sell',
+                        Quantity=order.Quantity,
+                        Leverage=order.Leverage,
+                        Stoploss=None,
+                        Takeprofit=None,
+                        Limit=None,
+                        Parent=index,
+                    ), order.Takeprofit)
+                    self.orderBook.at[index, 'ProfitExecuted'] = True
+            if order.Type == 'sell':
+                if order.Takeprofit > last['low'][0]:
+                    self.processBuy(Order(
+                        Type='buy',
+                        Quantity=order.Quantity,
+                        Leverage=order.Leverage,
+                        Stoploss=None,
+                        Takeprofit=None,
+                        Limit=None,
+                        Parent=index,
+                    ), order.Takeprofit)
+                    self.orderBook.at[index, 'ProfitExecuted'] = True
+
+

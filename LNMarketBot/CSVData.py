@@ -72,7 +72,7 @@ class CSVData(Data):
             self.end = end
         super().__init__(**params)
 
-    def dataGenerator(self):
+    async def dataGenerator(self):
         for seconds in range(0, round((self.end-self.start).total_seconds()),
                              self.interval):
             end = self.start+dt.timedelta(seconds=seconds)

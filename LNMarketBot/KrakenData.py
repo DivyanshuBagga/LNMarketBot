@@ -15,22 +15,18 @@ class KrakenData(Data):
             since=None,
             ascending=True,
         )
-        self.firstCall = True
         self.interval = interval
         super().__init__(**params)
 
-    def dataGenerator(self):
+    async def dataGenerator(self):
         wait = 60
         maxRows = 2880
         blockSize = 1440
         retry = 0
+        timer = None
         while retry < 10:
-            if not self.firstCall:
-                # await asyncio.sleep(interval*wait)
-                time.sleep(self.interval*wait)
-            else:
-                self.firstCall = False
-
+            if timer is not None:
+                await timer
             try:
                 ohlcnew, self.since = self.KAPI.get_ohlc_data(
                     "BTCUSD",
@@ -38,9 +34,8 @@ class KrakenData(Data):
                     since=self.since,
                     ascending=True,
                 )
-            except (TimeoutError, ConnectionError):
-                # await asyncio.sleep(wait)
-                time.sleep(wait)
+            except Exception:
+                await asyncio.sleep(wait)
                 retry += 1
                 continue
             # Remove the last enty as it is unconfirmed
@@ -50,5 +45,6 @@ class KrakenData(Data):
             if len(self.ohlc) >= maxRows:
                 self.ohlc.drop(self.ohlc.head(blockSize).index,
                                inplace=True)
+            timer = asyncio.create_task(asyncio.sleep(self.interval*wait))
             yield self.ohlc
         raise ConnectionError("Retry Exceeded 10")

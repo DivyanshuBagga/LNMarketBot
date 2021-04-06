@@ -21,12 +21,15 @@ class Bot:
         priceGens = []
         for data in self.datas:
             priceGens.append(data.dataGenerator())
-        while True:
+        loop = True
+        eventLoop = asyncio.get_event_loop()
+        while loop:
             prices = []
             try:
                 for gen in priceGens:
-                    prices.append(next(gen))
-            except StopIteration:
+                    prices.append(gen.__anext__())
+                prices = eventLoop.run_until_complete(asyncio.gather(*prices))
+            except StopAsyncIteration:
                 break
             for strategy in self.strategy:
                 stratPrices = []
@@ -37,11 +40,13 @@ class Bot:
                     strategy.execute(stratPrices)
                 except ValueError as VErr:
                     strategy.broker.notifier.notify(str(VErr))
+                    loop = False
                     break
                 except Exception as exception:
                     strategy.broker.notifier.notify(str(exception))
                     raise exception
             sys.stdout.flush()
+        #eventLoop.close()
         for strategy in self.strategy:
             strategy.stop()
 

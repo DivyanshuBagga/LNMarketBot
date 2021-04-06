@@ -28,7 +28,7 @@ class LowestPriceStrat(Strategy):
         belowBBand = low[-1] < lower[-1]
 
         assert(self.broker is not None)
-        riskAmount = min(round(self.broker.balance*self.params["RiskPercent"]),
+        riskAmount = min(round(self.broker.cashBalance*self.params["RiskPercent"]),
                          self.params["CashLimit"]-self.broker.marginWithheld)
 
         if high[-2] > self.highest:
@@ -79,7 +79,7 @@ class LowestPriceStrat(Strategy):
                     f" Bought {buyInfo['quantity']}"
                     f" at price {buyInfo['price']}"
                     f" with liquidation {buyInfo['liquidation']}.\n"
-                    f"Balance: {self.broker.balance}"
+                    f"cash Balance: {self.broker.cashBalance}"
                 )
             self.broker.notifier.notify(msgTxt)
 
