@@ -37,7 +37,7 @@ class Bot:
                     stratPrices.append(prices[index])
                 try:
                     strategy.broker.processData(stratPrices)
-                    strategy.execute(stratPrices)
+                    strategy.processData(stratPrices)
                 except ValueError as VErr:
                     strategy.broker.notifier.notify(str(VErr))
                     loop = False

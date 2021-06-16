@@ -28,8 +28,6 @@ class LowestPriceStrat(Strategy):
         belowBBand = low[-1] < lower[-1]
 
         assert(self.broker is not None)
-        riskAmount = min(round(self.broker.cashBalance*self.params["RiskPercent"]),
-                         self.params["CashLimit"]-self.broker.marginWithheld)
 
         if high[-2] > self.highest:
             self.highest = high[-2]
@@ -62,6 +60,8 @@ class LowestPriceStrat(Strategy):
             )
             assert(self.stopLoss != 0 and close[-1] != 0)
             marginReq = round(1.0e08*(1/self.stopLoss - 1/close[-1]))
+            riskAmount = min(round(self.broker.cashBalance*self.params["RiskPercent"]),
+                             self.params["CashLimit"]-self.broker.marginWithheld)
             quantity = riskAmount // marginReq
             if quantity == 0:
                 msgTxt = (

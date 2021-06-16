@@ -12,6 +12,7 @@ Order = namedtuple('Order', [
     'Stoploss',
     'Takeprofit',
     'Parent',
+    'Strategy',
 ])
 
 
@@ -40,17 +41,6 @@ class BacktestBroker(Broker):
             symbol,
             'returns',
         ], index=pd.to_datetime([]))
-        self.orderBook = pd.DataFrame(columns=[
-            'Type',
-            'Limit',
-            'Quantity',
-            'Leverage',
-            'Stoploss',
-            'Takeprofit',
-            'Parent',
-            'StopExecuted',
-            'ProfitExecuted',
-        ], index=pd.Series([]))
         self.orders = deque()
         super().__init__()
 
@@ -76,7 +66,7 @@ class BacktestBroker(Broker):
     def borrowed(self):
         return self._borrowed
 
-    def buy(self, quantity, leverage, stoploss=None, takeprofit=None,
+    def buy(self, strategy, quantity, leverage, stoploss=None, takeprofit=None,
             limit=None):
         self.orders.append(Order(
             Type='buy',
@@ -86,9 +76,10 @@ class BacktestBroker(Broker):
             Takeprofit=takeprofit,
             Limit=limit,
             Parent=None,
+            Strategy=strategy,
         ))
 
-    def sell(self, quantity, leverage, stoploss=None, takeprofit=None,
+    def sell(self, strategy, quantity, leverage, stoploss=None, takeprofit=None,
              limit=None):
         self.orders.append(Order(
             Type='sell',
@@ -98,9 +89,10 @@ class BacktestBroker(Broker):
             Takeprofit=takeprofit,
             Limit=limit,
             Parent=None,
+            Strategy=strategy,            
         ))
 
-    def closeAllLongs(self):
+    def closeAllLongs(self, strategy):
         if self.position > 0:
             self.orders.append(Order(
                 Type='sell',
@@ -110,9 +102,10 @@ class BacktestBroker(Broker):
                 Takeprofit=None,
                 Limit=None,
                 Parent=None,
+                Strategy=strategy,
             ))
 
-    def closeAllShorts(self):
+    def closeAllShorts(self, strategy):
         if self.position < 0:
             self.orders.append(Order(
                 Type='buy',
@@ -122,6 +115,7 @@ class BacktestBroker(Broker):
                 Takeprofit=None,
                 Limit=None,
                 Parent=None,
+                Strategy=strategy,
             ))
 
     def calculateDebt(self, freeCapital):
@@ -138,17 +132,6 @@ class BacktestBroker(Broker):
     def processBuy(self, order, price):
         assert(order.Leverage > 0)
         assert(order.Type == 'buy')
-
-        if order.Parent is not None:
-            self.notifier.notify(f"Takeprofit buy {order.Quantity}"
-                                 f" Total: {self.position}"
-                                 f" Parent: {order.Parent}"
-                                 f" price: {price}"
-                                 )
-            # If a buy takeprofit order is triggered,
-            # Position must be negative.
-            assert(self.position < 0)
-            assert(abs(self.position) >= order.Quantity)
 
         cost = (1+self.commission)*order.Quantity*price/order.Leverage
 
@@ -174,37 +157,18 @@ class BacktestBroker(Broker):
                 self.symbol,
             ]
         self.transactions = self.transactions.sort_index()
-        self.orderBook = self.orderBook.append({
-            'Type': order.Type,
-            'Limit': order.Limit,
-            'Quantity': order.Quantity,
-            'Leverage': order.Leverage,
-            'Stoploss': order.Stoploss,
-            'Takeprofit': order.Takeprofit,
-            'Parent': order.Parent,
-            'StopExecuted': False,
-            'ProfitExecuted': False,
-        }, ignore_index=True)
+        order.Strategy.notifyOrder(order, self.price)
 
     def processSell(self, order, price):
         assert(order.Leverage > 0)
         assert(order.Type == 'sell')
-        if order.Parent is not None:
-            self.notifier.notify(f"Takeprofit sell {order.Quantity}"
-                                 f" Total: {self.position}"
-                                 f" Parent: {order.Parent}"
-                                 f" price: {price}"
-                                 )
-            # If a sell takeprofit order is triggered,
-            # Position must be positive
-            assert(self.position > 0)
-            assert(abs(self.position) >= order.Quantity)
 
         netQuantity = self.position - order.Quantity
         value = abs(netQuantity) * price
-        if value > self.cashBalance * order.Leverage:
+        if netQuantity < 0 and value > self.cashBalance * order.Leverage:
             raise ValueError(f"Cash Balance {self.cashBalance:.2f} not enough"
-                             f" to borrow shares at leverage {order.Leverage:.2f}")
+                             f" to borrow {order.Quantity} shares"
+                             f" at leverage {order.Leverage:.2f}")
         freeCapital = (1-self.commission) * order.Quantity * price
         self.calculateDebt(freeCapital)
 
@@ -223,17 +187,7 @@ class BacktestBroker(Broker):
                 self.symbol,
             ]
         self.transactions = self.transactions.sort_index()
-        self.orderBook = self.orderBook.append({
-            'Type': order.Type,
-            'Limit': order.Limit,
-            'Quantity': order.Quantity,
-            'Leverage': order.Leverage,
-            'Stoploss': order.Stoploss,
-            'Takeprofit': order.Takeprofit,
-            'Parent': order.Parent,
-            'StopExecuted': False,
-            'ProfitExecuted': False,
-        }, ignore_index=True)
+        order.Strategy.notifyOrder(order, self.price)
 
     def processData(self, priceData):
         last = priceData[0].tail(1)
@@ -266,33 +220,6 @@ class BacktestBroker(Broker):
                     0.0,
                 ]
 
-        for index, order in self.orderBook.loc[(lambda df: (df['Stoploss'].notnull())
-                                                & (df['StopExecuted'] is False)
-                                                & (df['ProfitExecuted'] is False))].iterrows():
-            if order.Type == 'buy' and order.Stoploss > last['low'][0]:
-                self.processSell(Order(
-                    Type='sell',
-                    Quantity=order.Quantity,
-                    Leverage=order.Leverage,
-                    Stoploss=None,
-                    Takeprofit=None,
-                    Limit=None,
-                    Parent=index,
-                    ), order.Stoploss)
-                self.orderBook.at[index, 'StopExecuted'] = True
-            elif (order.Type == 'sell' and
-                  order.Stoploss < last['high'][0]):
-                self.processBuy(Order(
-                    Type='buy',
-                    Quantity=order.Quantity,
-                    Leverage=order.Leverage,
-                    Stoploss=None,
-                    Takeprofit=None,
-                    Limit=None,
-                    Parent=index,
-                ), order.Stoploss)
-                self.orderBook.at[index, 'StopExecuted'] = True
-
         leftOrders = deque()
         while self.orders:
             order = self.orders.popleft()
@@ -318,33 +245,5 @@ class BacktestBroker(Broker):
                     else:
                         leftOrders.append(order)
         self.orders = leftOrders
-
-        for index, order in self.orderBook.loc[(lambda df: (df['Takeprofit'].notnull())
-                                                & (df['StopExecuted'] is False)
-                                                & (df['ProfitExecuted'] is False))].iterrows():
-            if order.Type == 'buy':
-                if order.Takeprofit < last['high'][0]:
-                    self.processSell(Order(
-                        Type='sell',
-                        Quantity=order.Quantity,
-                        Leverage=order.Leverage,
-                        Stoploss=None,
-                        Takeprofit=None,
-                        Limit=None,
-                        Parent=index,
-                    ), order.Takeprofit)
-                    self.orderBook.at[index, 'ProfitExecuted'] = True
-            if order.Type == 'sell':
-                if order.Takeprofit > last['low'][0]:
-                    self.processBuy(Order(
-                        Type='buy',
-                        Quantity=order.Quantity,
-                        Leverage=order.Leverage,
-                        Stoploss=None,
-                        Takeprofit=None,
-                        Limit=None,
-                        Parent=index,
-                    ), order.Takeprofit)
-                    self.orderBook.at[index, 'ProfitExecuted'] = True
 
 
