@@ -1,19 +1,8 @@
 import pandas as pd
 import random
-from collections import namedtuple
 from collections import deque
 from .Broker import Broker
-
-Order = namedtuple('Order', [
-    'Type',
-    'Limit',
-    'Quantity',
-    'Leverage',
-    'Stoploss',
-    'Takeprofit',
-    'Parent',
-    'Strategy',
-])
+from .Order import Order
 
 
 class BacktestBroker(Broker):
@@ -23,6 +12,7 @@ class BacktestBroker(Broker):
         self._balance = balance
         self._cashBalance = balance
         self._borrowed = 0
+        self._borrowedShares = 0
         self.maxLeverage = maxLeverage
         self.interest = interest
         self.commission = commission
@@ -38,6 +28,7 @@ class BacktestBroker(Broker):
             'balance',
             'cashBalance',
             'borrowed',
+            'borrowedShares',
             symbol,
             'returns',
         ], index=pd.to_datetime([]))
@@ -48,15 +39,14 @@ class BacktestBroker(Broker):
     def balance(self):
         if self.price is not None:
             return (self.cashBalance
-                    + self.position * self.price['close'][0]
-                    - self.borrowed
+                    + (self.position) * self.price['close'][0]
                     )
         else:
             return self.cashBalance
 
     @property
     def cashBalance(self):
-        return self._cashBalance
+        return self._cashBalance - self.borrowed
 
     @property
     def position(self):
@@ -65,6 +55,10 @@ class BacktestBroker(Broker):
     @property
     def borrowed(self):
         return self._borrowed
+
+    @property
+    def borrowedShares(self):
+        return self._borrowedShares
 
     def buy(self, strategy, quantity, leverage, stoploss=None, takeprofit=None,
             limit=None):
@@ -118,29 +112,27 @@ class BacktestBroker(Broker):
                 Strategy=strategy,
             ))
 
+    def calculateShareDebt(self, freeShares):
+        if self.borrowedShares >= freeShares:
+            self._borrowedShares -= freeShares
+        else:
+            self._borrowedShares = 0
+
     def calculateDebt(self, freeCapital):
         if self.borrowed >= freeCapital:
             self._borrowed -= freeCapital
         else:
-            self._cashBalance = (
-                self.cashBalance
-                + freeCapital
-                - self.borrowed
-            )
+            self._cashBalance += (freeCapital - self.borrowed)
             self._borrowed = 0
 
-    def processBuy(self, order, price):
+    def processBuy(self, order, price, force=False):
         assert(order.Leverage > 0)
         assert(order.Type == 'buy')
 
         cost = (1+self.commission)*order.Quantity*price/order.Leverage
-
-        if cost > self.cashBalance:
-            raise ValueError(f"Balance {self.cashBalance:.2f} not enough"
+        if not force and cost > self.cashBalance:
+            print(f"Balance {self.cashBalance:.2f} not enough"
                              f" to cover cost {cost:.2f}")
-
-        self._cashBalance = self.cashBalance - cost
-        self._borrowed += cost*order.Leverage - cost
 
         # Add transaction
         if self.price.index[0] in self.transactions.index:
@@ -157,20 +149,27 @@ class BacktestBroker(Broker):
                 self.symbol,
             ]
         self.transactions = self.transactions.sort_index()
-        order.Strategy.notifyOrder(order, self.price)
+        self._cashBalance = self._cashBalance - cost
+        self._borrowed += cost*order.Leverage - cost
+        self.calculateShareDebt(order.Quantity)
+        order.Strategy.notifyOrder(order, price)
 
-    def processSell(self, order, price):
+    def processSell(self, order, price, force=False):
         assert(order.Leverage > 0)
         assert(order.Type == 'sell')
 
-        netQuantity = self.position - order.Quantity
+        netQuantity = self.position - order.Quantity/order.Leverage + self.borrowedShares
         value = abs(netQuantity) * price
-        if netQuantity < 0 and value > self.cashBalance * order.Leverage:
-            raise ValueError(f"Cash Balance {self.cashBalance:.2f} not enough"
-                             f" to borrow {order.Quantity} shares"
-                             f" at leverage {order.Leverage:.2f}")
+        if self.position > 0:
+            balance = self.cashBalance + self.position * price
+        else:
+            balance = self.cashBalance
+        if not force and netQuantity < 0 and value > balance * order.Leverage:
+            print(f"Cash Balance {self.cashBalance:.2f} not enough"
+                  f" to borrow {order.Quantity} shares"
+                  f" at leverage {order.Leverage:.2f}")
+                
         freeCapital = (1-self.commission) * order.Quantity * price
-        self.calculateDebt(freeCapital)
 
         # Add transaction
         if self.price.index[0] in self.transactions.index:
@@ -187,7 +186,9 @@ class BacktestBroker(Broker):
                 self.symbol,
             ]
         self.transactions = self.transactions.sort_index()
-        order.Strategy.notifyOrder(order, self.price)
+        self._borrowedShares = order.Quantity - order.Quantity//order.Leverage
+        self.calculateDebt(freeCapital)
+        order.Strategy.notifyOrder(order, price)
 
     def processData(self, priceData):
         last = priceData[0].tail(1)
@@ -208,6 +209,7 @@ class BacktestBroker(Broker):
                     self.balance,
                     self.cashBalance,
                     self.borrowed,
+                    self.borrowedShares,
                     self.position,
                     (self.balance - self.book.tail(1)['balance'][0])/self.balance,
                 ]
@@ -216,6 +218,7 @@ class BacktestBroker(Broker):
                     self.balance,
                     self.cashBalance,
                     self.borrowed,
+                    self.borrowedShares,
                     self.position,
                     0.0,
                 ]

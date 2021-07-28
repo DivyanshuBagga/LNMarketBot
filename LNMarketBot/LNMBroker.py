@@ -1,5 +1,6 @@
 from .Broker import Broker
 from .Notifier import addMessage
+from .Order import Order
 from LNMarkets import Positions
 
 
@@ -31,11 +32,11 @@ class LNMBroker(Broker):
 
     @property
     def openPositions(self):
-        return Positions.getPositions(self.token, "open")['open']
+        return Positions.getPositions(self.token, "open")
 
     @property
     def closedPositions(self):
-        return Positions.getPositions(self.token, "closed")['closed']
+        return Positions.getPositions(self.token, "closed")
 
     @property
     def unrealizedProfit(self):
@@ -58,18 +59,20 @@ class LNMBroker(Broker):
         return self.calculateMargin(self.openPositions)
 
     @addMessage
-    def buy(self, leverage, quantity, stoploss=None, takeprofit=None,
+    def buy(self, strategy, leverage, quantity=None, margin=None, stoploss=None, takeprofit=None,
             limit=None):
+        assert(margin is not None or quantity is not None)
         if limit is None:
-            return Positions.buy(
+            positionData = Positions.buy(
                 token=self.token,
                 leverage=leverage,
                 quantity=quantity,
+                margin=margin,
                 stoploss=stoploss,
                 takeprofit=takeprofit,
             )
         else:
-            return Positions.limitBuy(
+            positionData = Positions.limitBuy(
                 token=self.token,
                 leverage=leverage,
                 price=limit,
@@ -77,27 +80,52 @@ class LNMBroker(Broker):
                 stoploss=stoploss,
                 takeprofit=takeprofit,
             )
+        strategy.notifyOrder(Order(
+                    Type='buy',
+                    Quantity=positionData['position']['quantity'],
+                    Leverage=leverage,
+                    Stoploss=stoploss,
+                    Takeprofit=takeprofit,
+                    Limit=limit,
+                    Parent=None,
+                    Strategy=strategy,
+                ), positionData['position']['price'])
+        return positionData
 
     @addMessage
-    def sell(self, leverage, quantity, stoploss=None, takeprofit=None,
+    def sell(self, strategy, leverage, quantity=None, margin=None, stoploss=None, takeprofit=None,
              limit=None):
+        assert(margin is not None or quantity is not None)
         if limit is None:
-            return Positions.sell(
+            positionData = Positions.sell(
                 token=self.token,
                 leverage=leverage,
                 quantity=quantity,
+                margin=margin,
                 stoploss=stoploss,
                 takeprofit=takeprofit,
             )
         else:
-            return Positions.limitSell(
+            positionData = Positions.limitSell(
                 token=self.token,
                 leverage=leverage,
                 price=limit,
                 quantity=quantity,
+                margin=margin,
                 stoploss=stoploss,
                 takeprofit=takeprofit,
             )
+        strategy.notifyOrder(Order(
+                    Type='sell',
+                    Quantity=positionData['position']['quantity'],
+                    Leverage=leverage,
+                    Stoploss=stoploss,
+                    Takeprofit=takeprofit,
+                    Limit=limit,
+                    Parent=None,
+                    Strategy=strategy,
+                ), positionData['position']['price'])
+        return positionData
 
     @addMessage
     def updateProfit(self, pid, price):

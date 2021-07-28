@@ -7,7 +7,7 @@ from pykrakenapi import KrakenAPI
 
 class KrakenData(Data):
 
-    def __init__(self, interval=1, **params):
+    def __init__(self, interval=1, waitInterval=1, **params):
         self.KAPI = KrakenAPI(krakenex.API())
         self.ohlc, self.since = self.KAPI.get_ohlc_data(
             "BTCUSD",
@@ -16,6 +16,7 @@ class KrakenData(Data):
             ascending=True,
         )
         self.interval = interval
+        self.waitInterval = waitInterval
         super().__init__(**params)
 
     async def dataGenerator(self):
@@ -45,6 +46,6 @@ class KrakenData(Data):
             if len(self.ohlc) >= maxRows:
                 self.ohlc.drop(self.ohlc.head(blockSize).index,
                                inplace=True)
-            timer = asyncio.create_task(asyncio.sleep(self.interval*wait))
+            timer = asyncio.create_task(asyncio.sleep(self.waitInterval*wait))
             yield self.ohlc
         raise ConnectionError("Retry Exceeded 10")

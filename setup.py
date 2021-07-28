@@ -10,7 +10,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name='LNMarketBot',
     packages=find_packages(include=['LNMarketBot']),
-    version='0.2.0',
+    version='0.3.3',
     description='Trading Bot for LNMarkets',
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -24,9 +24,10 @@ setup(
         'pykrakenapi',
         'LNMarkets',
         'notifiers',
+        'nest-asyncio',
     ],
     download_url='https://github.com/DivyanshuBagga/LNMarketBot/archive/'
-    '0.2.0.tar.gz',
+    '0.3.3.tar.gz',
     keywords=['Bitcoin', 'Finance', 'Trading'],
     python_requires='>=3.6',
 )

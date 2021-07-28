@@ -1,15 +1,24 @@
 import time
 import pandas as pd
 from abc import ABCMeta, abstractmethod
+from .Order import Order
 
 
 class Strategy(metaclass=ABCMeta):
 
-    def __init__(self, broker=None, **params):
+    def __init__(self, broker=None, backtest=False, **params):
         self.params = params
         self.broker = broker
         self.datas = []
         self.dataIndex = []
+
+        self.backtest = backtest
+        if self.backtest:
+            self.sellCallback = self.broker.processSell
+            self.buyCallback = self.broker.processBuy
+        else:
+            self.sellCallback = self.notifyOrder
+            self.buyCallback = self.notifyOrder
 
         self.highest = 0.0
         self.drawdown = 0.0
@@ -47,45 +56,136 @@ class Strategy(metaclass=ABCMeta):
         """
         pass
 
+    def close(self):
+        for index, order in self.orderBook.loc[(lambda df: (df['Stoploss'].notnull())
+                                                & (df['StopExecuted'] == False)
+                                                & (df['ProfitExecuted'] == False))].iterrows():
+            if order.Type == 'buy':
+                self.sellCallback(Order(
+                    Type='sell',
+                    Quantity=order.Quantity,
+                    Leverage=1,
+                    Stoploss=None,
+                    Takeprofit=None,
+                    Limit=None,
+                    Parent=None,
+                    Strategy=order.Strategy,
+                ), self.price['close'][0])
+                self.orderBook.at[index, 'StopExecuted'] = True
+            elif order.Type == 'sell':
+                self.buyCallback(Order(
+                    Type='buy',
+                    Quantity=order.Quantity,
+                    Leverage=1,
+                    Stoploss=None,
+                    Takeprofit=None,
+                    Limit=None,
+                    Parent=None,
+                    Strategy=order.Strategy,
+                ), self.price['close'][0])
+                self.orderBook.at[index, 'StopExecuted'] = True
+        for index, order in self.orderBook.loc[(lambda df: (df['Takeprofit'].notnull())
+                                                & (df['StopExecuted'] == False)
+                                                & (df['ProfitExecuted'] == False))].iterrows():
+            if order.Type == 'buy':
+                self.sellCallback(Order(
+                    Type='sell',
+                    Quantity=order.Quantity,
+                    Leverage=1,
+                    Stoploss=None,
+                    Takeprofit=None,
+                    Limit=None,
+                    Parent=None,
+                    Strategy=order.Strategy,
+                ), self.price['close'][0])
+                self.orderBook.at[index, 'ProfitExecuted'] = True
+            if order.Type == 'sell':
+                self.buyCallback(Order(
+                    Type='buy',
+                    Quantity=order.Quantity,
+                    Leverage=1,
+                    Stoploss=None,
+                    Takeprofit=None,
+                    Limit=None,
+                    Parent=None,
+                    Strategy=order.Strategy,
+                ), self.price['close'][0])
+                self.orderBook.at[index, 'ProfitExecuted'] = True
+        if self.position > 0:
+            self.broker.sell(
+                strategy=self,
+                leverage=1,
+                quantity=self.position,
+                )
+        if self.position < 0:
+            self.broker.buy(
+                strategy=self,
+                leverage=1,
+                quantity=abs(self.position),
+                )
+
+
     def processData(self, datas):
-        self.computeDrawdown()
+        if self.backtest:
+            self.computeDrawdown()
         last = datas[0].tail(1)
+        self.price = last
         for index, order in self.orderBook.loc[(lambda df: (df['Stoploss'].notnull())
                                                 & (df['StopExecuted'] == False)
                                                 & (df['ProfitExecuted'] == False))].iterrows():
             if order.Type == 'buy' and order.Stoploss > last['low'][0]:
-                self.broker.sell(
-                    quantity=order.Quantity,
-                    leverage=order.Leverage,
-                    strategy=order.Strategy
-                    )
+                self.sellCallback(Order(
+                    Type='sell',
+                    Quantity=order.Quantity,
+                    Leverage=1,
+                    Stoploss=None,
+                    Takeprofit=None,
+                    Limit=None,
+                    Parent=None,
+                    Strategy=order.Strategy,
+                ), order.Stoploss)
                 self.orderBook.at[index, 'StopExecuted'] = True
             elif (order.Type == 'sell' and
                   order.Stoploss < last['high'][0]):
-                self.broker.buy(
-                    quantity=order.Quantity,
-                    leverage=order.Leverage,
-                    strategy=order.Strategy
-                    )
+                self.buyCallback(Order(
+                    Type='buy',
+                    Quantity=order.Quantity,
+                    Leverage=1,
+                    Stoploss=None,
+                    Takeprofit=None,
+                    Limit=None,
+                    Parent=None,
+                    Strategy=order.Strategy,
+                ), order.Stoploss)
                 self.orderBook.at[index, 'StopExecuted'] = True
         for index, order in self.orderBook.loc[(lambda df: (df['Takeprofit'].notnull())
                                                 & (df['StopExecuted'] == False)
                                                 & (df['ProfitExecuted'] == False))].iterrows():
             if order.Type == 'buy':
                 if order.Takeprofit < last['high'][0]:
-                    self.broker.sell(
-                        quantity=order.Quantity,
-                        leverage=order.Leverage,
-                        strategy=order.Strategy
-                    )
+                    self.sellCallback(Order(
+                        Type='sell',
+                        Quantity=order.Quantity,
+                        Leverage=1,
+                        Stoploss=None,
+                        Takeprofit=None,
+                        Limit=None,
+                        Parent=None,
+                        Strategy=order.Strategy,
+                    ), order.Takeprofit)
                     self.orderBook.at[index, 'ProfitExecuted'] = True
             if order.Type == 'sell':
                 if order.Takeprofit > last['low'][0]:
-                    self.broker.buy(
-                        quantity=order.Quantity,
-                        leverage=order.Leverage,
-                        strategy=order.Strategy
-                    )
+                    self.buyCallback(Order(
+                        Type='buy',
+                        Quantity=order.Quantity,
+                        Leverage=1,
+                        Stoploss=None,
+                        Takeprofit=None,
+                        Limit=None,
+                        Parent=None,
+                        Strategy=order.Strategy,
+                    ), order.Takeprofit)
                     self.orderBook.at[index, 'ProfitExecuted'] = True
         self.execute(datas)
 
@@ -96,8 +196,8 @@ class Strategy(metaclass=ABCMeta):
             self.drawdown = 0
         else:
             self.drawdown = self.highest - balance
-            if balance != 0 and self.drawdown/balance > self.maxdrawdown:
-                self.maxdrawdown = self.drawdown/balance
+            if balance != 0 and self.drawdown/self.highest > self.maxdrawdown:
+                self.maxdrawdown = self.drawdown/self.highest
 
     def notifyOrder(self, order, price):
         """
@@ -121,8 +221,8 @@ class Strategy(metaclass=ABCMeta):
         elif order.Type == 'sell':
             self.position -= order.Quantity
 
-        self.broker.notifier.notify(f"{price.index[0]}: {order.Type} "
-                                    f" Executed at price {price['close'][0]:.2f}"
+        self.broker.notifier.notify(f"{self.price.index[0]}: {order.Type} "
+                                    f" Executed at price {price:.2f}"
                                     f" Quantity: {order.Quantity}"
         )
 
