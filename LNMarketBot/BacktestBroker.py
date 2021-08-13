@@ -125,12 +125,12 @@ class BacktestBroker(Broker):
             self._cashBalance += (freeCapital - self.borrowed)
             self._borrowed = 0
 
-    def processBuy(self, order, price, force=False):
+    def processBuy(self, order, price):
         assert(order.Leverage > 0)
         assert(order.Type == 'buy')
 
         cost = (1+self.commission)*order.Quantity*price/order.Leverage
-        if not force and cost > self.cashBalance:
+        if cost > self.cashBalance:
             print(f"Balance {self.cashBalance:.2f} not enough"
                              f" to cover cost {cost:.2f}")
 
@@ -154,7 +154,7 @@ class BacktestBroker(Broker):
         self.calculateShareDebt(order.Quantity)
         order.Strategy.notifyOrder(order, price)
 
-    def processSell(self, order, price, force=False):
+    def processSell(self, order, price):
         assert(order.Leverage > 0)
         assert(order.Type == 'sell')
 
@@ -164,7 +164,7 @@ class BacktestBroker(Broker):
             balance = self.cashBalance + self.position * price
         else:
             balance = self.cashBalance
-        if not force and netQuantity < 0 and value > balance * order.Leverage:
+        if netQuantity < 0 and value > balance * order.Leverage:
             print(f"Cash Balance {self.cashBalance:.2f} not enough"
                   f" to borrow {order.Quantity} shares"
                   f" at leverage {order.Leverage:.2f}")

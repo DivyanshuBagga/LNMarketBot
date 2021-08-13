@@ -9,6 +9,7 @@ class LNMBroker(Broker):
     def __init__(self, token, initialBalance, silent=False):
         self.token = token
         self.initialBalance = initialBalance
+        self._position = 0
         super().__init__()
 
     @staticmethod
@@ -28,7 +29,11 @@ class LNMBroker(Broker):
 
     @property
     def position(self):
-        pass
+        return self._position
+
+    @position.setter
+    def position(self, position):
+        self._position = position
 
     @property
     def openPositions(self):
@@ -168,6 +173,9 @@ class LNMBroker(Broker):
     @addMessage
     def cashin(self, pid, amount):
         return Positions.cashin(self.token, pid, amount)
+
+    def isOpen(self, pid):
+        return Positions.isOpen(self.token, pid)
 
     def processData(self, priceData):
         pass
