@@ -1,3 +1,4 @@
+import pandas as pd
 from .Broker import Broker
 from .Notifier import addMessage
 from .Order import Order
@@ -10,6 +11,17 @@ class LNMBroker(Broker):
         self.token = token
         self.initialBalance = initialBalance
         self._position = 0
+        self.orderBook = pd.DataFrame(columns=[
+            'Pid',
+            'Type',
+            'Limit',
+            'Quantity',
+            'Leverage',
+            'Stoploss',
+            'Takeprofit',
+            'StopExecuted',
+            'ProfitExecuted',
+        ], index=pd.Series([]))
         super().__init__()
 
     @staticmethod
@@ -95,6 +107,18 @@ class LNMBroker(Broker):
                     Parent=None,
                     Strategy=strategy,
                 ), positionData['position']['price'])
+        self.orderBook = self.orderBook.append({
+            'Pid': positionData['position']['pid'],
+            'Type': 'buy',
+            'Limit': limit,
+            'Quantity': positionData['position']['quantity'],
+            'Leverage': leverage,
+            'Stoploss': stoploss,
+            'Takeprofit': takeprofit,
+            'StopExecuted': False,
+            'ProfitExecuted': False,
+        }, ignore_index=True)
+
         return positionData
 
     @addMessage
@@ -130,6 +154,17 @@ class LNMBroker(Broker):
                     Parent=None,
                     Strategy=strategy,
                 ), positionData['position']['price'])
+        self.orderBook = self.orderBook.append({
+            'Pid': positionData['position']['pid'],
+            'Type': 'sell',
+            'Limit': limit,
+            'Quantity': positionData['position']['quantity'],
+            'Leverage': leverage,
+            'Stoploss': stoploss,
+            'Takeprofit': takeprofit,
+            'StopExecuted': False,
+            'ProfitExecuted': False,
+        }, ignore_index=True)
         return positionData
 
     @addMessage
@@ -178,4 +213,26 @@ class LNMBroker(Broker):
         return Positions.isOpen(self.token, pid)
 
     def processData(self, priceData):
-        pass
+        last = priceData[0].tail(1)
+        self.price = last
+        for index, order in self.orderBook.loc[(lambda df: (df['Stoploss'].notnull())
+                                                & (df['StopExecuted'] == False)
+                                                & (df['ProfitExecuted'] == False))].iterrows():
+            if (order.Type == 'buy' and order.Stoploss > last['low'][0]) or (order.Type == 'sell' and order.Stoploss < last['high'][0]):
+                if self.isOpen(order.Pid):
+                    self.notifier.notify(f"Stop at {order.Stoploss} hit but "
+                                         f"order {order.Pid} not closed."
+                                         )
+                    self.closePosition(order.Pid)
+            self.orderBook.at[index, 'StopExecuted'] = True
+        for index, order in self.orderBook.loc[(lambda df: (df['Takeprofit'].notnull())
+                                                & (df['StopExecuted'] == False)
+                                                & (df['ProfitExecuted'] == False))].iterrows():
+            if (order.Type == 'buy' and order.Takeprofit < last['high'][0]) or (order.Type == 'sell' and order.Takeprofit > last['low'][0]):
+                if self.isOpen(order.Pid):
+                    self.notifier.notify(f"Takeprofit at {order.Takeprofit} "
+                                         f"hit but order {order.Pid} not "
+                                         "closed."
+                                         )
+                    self.closePosition(order.Pid)
+                self.orderBook.at[index, 'ProfitExecuted'] = True
